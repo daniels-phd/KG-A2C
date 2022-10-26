@@ -1,3 +1,13 @@
+# KG-A2C Baseline for PhD
+
+## Requirements and Installation
+
+1. Install Poetry for Python dependency management: https://python-poetry.org/
+2. Install ASDF for tool dependency management (e.g. Python itself, and Java ): https://asdf-vm.com/
+3. `asdf install`
+4. `poetry install`
+
+
 # KG-A2C
 Goal driven language generation using knowledge graph A2C agents. This code accompanies the paper [Graph Constrained Reinforcement Learning for Natural Language Action Spaces](https://openreview.net/forum?id=B1x6w0EtwH).
 

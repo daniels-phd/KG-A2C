@@ -9,9 +9,7 @@ packages = [{ include = "kga2c" }]
 [tool.poetry.dependencies]
 python = "^3.9"
 torch = [
-    { file = "../torch-dist/torch-1.11.0+cu113-cp39-cp39-linux_x86_64.whl", markers = "sys_platform == 'linux'" },
-    { url = "https://download.pytorch.org/whl/cu113/torch-1.12.1%2Bcu113-cp39-cp39-win_amd64.whl", markers = "sys_platform == 'win32'" },
-    { version = "^1.12.1", markers = "sys_platform == 'darwin'" },
+    { url = "https://download.pytorch.org/whl/nightly/cpu/torch-1.14.0.dev20221025-cp39-none-macosx_10_9_x86_64.whl" },
 ]
 jericho = "^3.1.0"
 black = "^22.10.0"
@@ -23,7 +21,6 @@ statistics = "^1.0.3.5"
 networkx = "^2.8.7"
 spacy = "^3.4.2"
 fuzzywuzzy = "^0.18.0"
-requests = "^2.28.1"
 diskcache = "^5.4.0"
 stanza = "^1.4.2"
 

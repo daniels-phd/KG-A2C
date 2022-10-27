@@ -7,9 +7,6 @@ from representations import StateAction
 import random
 import jericho
 from jericho import TemplateActionGenerator
-import stanza
-from stanza.server import CoreNLPClient
-stanza.install_corenlp()
 
 GraphInfo = collections.namedtuple(
     "GraphInfo",
@@ -67,11 +64,7 @@ class KGA2CEnv:
         self.max_word_len: int = self.bindings["max_word_length"]  # type: ignore
         self.vocab, self.vocab_rev = load_vocab(self.env)
         self.admissible_actions_cache = make_admissible_actions_cache(
-            self.bindings["name"] # type: ignore
-        )
-        self.corenlp_client = CoreNLPClient(
-            annotators=["pos","openie"],
-            timeout=30000,
+            self.bindings["name"]  # type: ignore
         )
 
     def _get_admissible_actions(self, objs):
@@ -104,25 +97,15 @@ class KGA2CEnv:
             ob_i: str = self.env.step("inventory")[0]
             self.env.set_state(saved_state)
         except RuntimeError:
-            print(
-                f"RuntimeError: {clean_obs(ob_r)}"
-            )
+            print(f"RuntimeError: {clean_obs(ob_r)}")
             ob_l = ob_i = ""
         ob_rep = self.state_rep.get_obs_rep(ob_l, ob_i, ob_r, action)
         cleaned_obs = clean_obs(ob_l + " " + ob_r)
 
-        openie_cache = self.corenlp_client.
+        rules, tocache = self.state_rep.step(
+            cleaned_obs, ob_i, objs, action, gat=self.gat
+        )
 
-        if openie_cache is None:
-            rules, tocache = self.state_rep.step(
-                cleaned_obs, ob_i, objs, action, cache=None, gat=self.gat
-            )
-            self.conn_openie.set(cleaned_obs, str(tocache))
-        else:
-            openie_cache = eval(openie_cache.decode("cp1252"))
-            rules, _ = self.state_rep.step(
-                cleaned_obs, ob_i, objs, action, cache=openie_cache, gat=self.gat
-            )
         graph_state = self.state_rep.graph_state
         graph_state_rep = self.state_rep.graph_state_rep
         action_rep = self.state_rep.get_action_rep_drqa(action)
@@ -139,7 +122,7 @@ class KGA2CEnv:
     def step(self, action):
         self.episode_steps += 1
         obs, reward, done, info = self.env.step(action)
-        info["valid"] = self.env.world_changed() or done
+        info["valid"] = self.env._world_changed() or done
         info["steps"] = self.episode_steps
         if info["valid"]:
             self.valid_steps += 1

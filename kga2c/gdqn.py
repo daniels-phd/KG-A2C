@@ -1,30 +1,29 @@
-from typing import Any
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.autograd as autograd
-import torch.nn.functional as F
 import os
-from os.path import basename, splitext
-import numpy as np
 import time
-import sentencepiece as spm
+from os.path import basename, splitext
 from statistics import mean
+from typing import Any
 
 import jericho
-from jericho.template_action_generator import TemplateActionGenerator
-from jericho.util import unabbreviate, clean
 import jericho.defines
+import numpy as np
+import sentencepiece as spm
+import torch
+import torch.autograd as autograd
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from jericho.template_action_generator import TemplateActionGenerator
+from jericho.util import clean, unabbreviate
+
+import kga2c.logger as logger
+from kga2c.env import *
 from kga2c.types import Params
+from kga2c.models import KGA2C
+from kga2c.representations import StateAction
+from kga2c.vec_env import *
 
-from representations import StateAction
-from models import KGA2C
-from env import *
-from vec_env import *
-import logger
-
-
-device = torch.device("cuda")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def configure_logger(log_dir):
@@ -84,7 +83,7 @@ class KGA2CTrainer(object):
             self.vocab_act_rev,
             len(self.sp),
             gat=self.params["gat"],
-        ).cuda()
+        ).to(device)
         self.batch_size = params["batch_size"]
         if params["preload_weights"]:
             self.model = torch.load(self.params["preload_weights"])["model"]
@@ -113,7 +112,7 @@ class KGA2CTrainer(object):
                 obj_t.update(a.obj_ids)
             tmpl_target.append(cur_t)
             obj_targets.append(list(obj_t))
-        tmpl_target_tt = torch.FloatTensor(tmpl_target).cuda()
+        tmpl_target_tt = torch.FloatTensor(tmpl_target).to(device)
 
         # Note: Adjusted to use the objects in the admissible actions only
         object_mask_target = []
@@ -122,7 +121,7 @@ class KGA2CTrainer(object):
             for o in objl:
                 cur_objt[o] = 1
             object_mask_target.append([[cur_objt], [cur_objt]])
-        obj_target_tt = torch.FloatTensor(object_mask_target).squeeze().cuda()
+        obj_target_tt = torch.FloatTensor(object_mask_target).squeeze().to(device)
         return tmpl_target_tt, obj_target_tt
 
     def generate_graph_mask(self, graph_infos):
@@ -154,7 +153,7 @@ class KGA2CTrainer(object):
             else:
                 assert False, "Unrecognized masking {}".format(self.params["masking"])
             mask_all.append(mask)
-        return torch.BoolTensor(mask_all).cuda().detach()
+        return torch.BoolTensor(mask_all).to(device).detach()
 
     def discount_reward(self, transitions, last_values):
         returns, advantages = [], []
@@ -262,8 +261,8 @@ class KGA2CTrainer(object):
             for done, info in zip(dones, infos):
                 if done:
                     tb.logkv_mean("EpisodeScore", info["score"])
-            rew_tt = torch.FloatTensor(rewards).cuda().unsqueeze(1)
-            done_mask_tt = (~torch.tensor(dones)).float().cuda().unsqueeze(1)
+            rew_tt = torch.FloatTensor(rewards).to(device).unsqueeze(1)
+            done_mask_tt = (~torch.tensor(dones)).float().to(device).unsqueeze(1)
             self.model.reset_hidden(done_mask_tt)
             transitions.append(
                 (
@@ -357,11 +356,11 @@ class KGA2CTrainer(object):
                     o2_mask[d] = 1
                 elif st == 1:
                     o1_mask[d] = 1
-            o1_mask = torch.FloatTensor(o1_mask).cuda()
-            o2_mask = torch.FloatTensor(o2_mask).cuda()
+            o1_mask = torch.FloatTensor(o1_mask).to(device)
+            o2_mask = torch.FloatTensor(o2_mask).to(device)
 
             # Policy Gradient Loss
-            policy_obj_loss = torch.FloatTensor([0]).cuda()
+            policy_obj_loss = torch.FloatTensor([0]).to(device)
             cnt = 0
             for i in range(self.batch_size):
                 if dec_steps[i] >= 1:

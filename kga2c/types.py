@@ -6,7 +6,6 @@ class Params(TypedDict):
     spm_file: str
     tsv_file: str
     rom_file_path: str
-    openie_path: str
     batch_size: int
     lr: float
     gamma: float
@@ -16,7 +15,6 @@ class Params(TypedDict):
     gat_emb_size: int
     dropout_ratio: float
     preload_weights: str
-    bindings: str
     seed: int
     steps: int
     reset_steps: int

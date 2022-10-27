@@ -1,5 +1,5 @@
 import os
-from gdqn import KGA2CTrainer
+from kga2c.gdqn import KGA2CTrainer
 import argparse
 
 from kga2c.types import Params
@@ -11,7 +11,6 @@ def parse_args():
     parser.add_argument("--spm_file", default="./spm_models/unigram_8k.model")
     parser.add_argument("--tsv_file", default="../data/zork1_entity2id.tsv")
     parser.add_argument("--rom_file_path", default="roms/zork1.z5")
-    parser.add_argument("--openie_path", default="stanford-corenlp-full-2018-10-05")
     parser.add_argument("--batch_size", default=16, type=int)
     parser.add_argument("--lr", default=0.003, type=float)
     parser.add_argument("--gamma", default=0.5, type=float)
@@ -21,7 +20,6 @@ def parse_args():
     parser.add_argument("--gat_emb_size", default=50, type=int)
     parser.add_argument("--dropout_ratio", default=0.2, type=float)
     parser.add_argument("--preload_weights", default="")
-    parser.add_argument("--bindings", default="zork1")
     parser.add_argument("--seed", default=0, type=int)
     parser.add_argument("--steps", default=100000, type=int)
     parser.add_argument("--reset_steps", default=100, type=int)

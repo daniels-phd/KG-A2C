@@ -32,7 +32,7 @@ def configure_logger(log_dir):
     tb = logger.Logger(
         log_dir,
         [
-            logger.make_output_format("tensorboard", log_dir),
+            # logger.make_output_format("tensorboard", log_dir),
             logger.make_output_format("csv", log_dir),
             logger.make_output_format("stdout", log_dir),
         ],
@@ -62,16 +62,8 @@ class KGA2CTrainer(object):
         self.vocab, self.vocab_rev = load_vocab(self.env)
         self.sp = spm.SentencePieceProcessor()
         self.sp.Load(params["spm_file"])
-        kg_env = KGA2CEnv(
-            params["rom_file_path"],
-            params["seed"],
-            self.sp,
-            params["tsv_file"],
-            step_limit=params["reset_steps"],
-            stuck_steps=params["stuck_steps"],
-            gat=params["gat"],
-        )
-        self.vec_env = VecEnv(params["batch_size"], kg_env, params["openie_path"])
+
+        self.vec_env = VecEnv(params["batch_size"], params)
         self.template_generator = TemplateActionGenerator(self.bindings)
         env = self.env
         self.vocab_act, self.vocab_act_rev = load_vocab(env)

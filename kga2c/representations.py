@@ -11,7 +11,7 @@ class StateAction(object):
     def __init__(self, spm, vocab, vocab_rev, tsv_file, max_word_len):
         self.graph_state = nx.DiGraph()
         self.max_word_len = max_word_len
-        self.graph_state_rep = []
+        self.graph_state_rep = ([], np.ndarray([]))
         self.visible_state = ""
         self.drqa_input = ""
         self.vis_pruned_actions = []

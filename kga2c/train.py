@@ -9,9 +9,9 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output_dir", default="./logs/")
     parser.add_argument("--spm_file", default="./spm_models/unigram_8k.model")
-    parser.add_argument("--tsv_file", default="../data/zork1_entity2id.tsv")
+    parser.add_argument("--tsv_file", default="./data/zork1_entity2id.tsv")
     parser.add_argument("--rom_file_path", default="roms/zork1.z5")
-    parser.add_argument("--batch_size", default=16, type=int)
+    parser.add_argument("--batch_size", default=7, type=int)
     parser.add_argument("--lr", default=0.003, type=float)
     parser.add_argument("--gamma", default=0.5, type=float)
     parser.add_argument("--embedding_size", default=50, type=int)
@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument("--dropout_ratio", default=0.2, type=float)
     parser.add_argument("--preload_weights", default="")
     parser.add_argument("--seed", default=0, type=int)
-    parser.add_argument("--steps", default=100000, type=int)
+    parser.add_argument("--steps", default=100, type=int)
     parser.add_argument("--reset_steps", default=100, type=int)
     parser.add_argument("--stuck_steps", default=10, type=int)
     parser.add_argument("--trial", default="base")
@@ -40,14 +40,16 @@ def parse_args():
     parser.add_argument("--no-gat", dest="gat", action="store_false")
     parser.add_argument(
         "--masking",
-        default="kg",
+        default="none",
         choices=["kg", "interactive", "none"],
         help="Type of object masking applied",
     )
     parser.set_defaults(gat=True)
     args = parser.parse_args()
     params = vars(args)
-    return Params(**params)
+    p = Params(**params)
+
+    return p
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 import collections
-from typing import Any, Union
+from typing import Any, NamedTuple, Tuple, Union
 import redis
 import numpy as np
 from kga2c.lib import make_admissible_actions_cache
@@ -7,11 +7,18 @@ from representations import StateAction
 import random
 import jericho
 from jericho import TemplateActionGenerator
+from networkx import DiGraph
+from sentencepiece import SentencePieceProcessor
 
-GraphInfo = collections.namedtuple(
-    "GraphInfo",
-    "objs, ob_rep, act_rep, graph_state, graph_state_rep, admissible_actions, admissible_actions_rep",
-)
+
+class GraphInfo(NamedTuple):
+    objs: list[str]
+    ob_rep: np.ndarray
+    act_rep: list[int]
+    graph_state: DiGraph
+    graph_state_rep: Tuple[list[Any], np.ndarray]
+    admissible_actions: list[str]
+    admissible_actions_rep: list[list[int]]
 
 
 def load_vocab(env: jericho.FrotzEnv):
@@ -38,10 +45,10 @@ class KGA2CEnv:
 
     def __init__(
         self,
-        rom_path,
-        seed,
-        spm_model,
-        tsv_file,
+        rom_path: str,
+        seed: int,
+        spm_model: SentencePieceProcessor,
+        tsv_file: str,
         step_limit=None,
         stuck_steps=10,
         gat=True,
@@ -67,6 +74,11 @@ class KGA2CEnv:
             self.bindings["name"]  # type: ignore
         )
 
+    def create(self):
+        self.env = jericho.FrotzEnv(self.rom_path, self.seed)
+        self.bindings: dict[str, Any] = self.env.bindings  # type: ignore
+        self.act_gen: TemplateActionGenerator = self.env.act_gen  # type: ignore
+
     def _get_admissible_actions(self, objs):
         world_state_hash = self.env.get_world_state_hash()
         admissible: Union[list[str], None] = (
@@ -75,7 +87,7 @@ class KGA2CEnv:
             else None
         )
         if admissible is None:
-            admissible = self.env.get_valid_actions()
+            admissible = self.act_gen.generate_actions(objs)
             self.admissible_actions_cache[world_state_hash] = admissible
 
         return admissible

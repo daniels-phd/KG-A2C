@@ -23,6 +23,8 @@ spacy = "^3.4.2"
 fuzzywuzzy = "^0.18.0"
 diskcache = "^5.4.0"
 stanza = "^1.4.2"
+tensorboard = "^2.10.1"
+multiprocess = "^0.70.14"
 
 [build-system]
 requires = ["poetry-core"]

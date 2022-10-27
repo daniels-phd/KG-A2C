@@ -1,4 +1,5 @@
 #%%
+from dataclasses import dataclass
 from typing import NamedTuple, Any
 import stanza
 from stanza.server import CoreNLPClient
@@ -7,11 +8,15 @@ import atexit
 
 openie_cache = diskcache.Cache("./.cache/openie")
 
+
 stanza.install_corenlp()
 
 corenlp_client = CoreNLPClient(
     annotators=["pos", "openie"], timeout=30000, endpoint="http://localhost:8002"
 )
+
+corenlp_client.ensure_alive()
+corenlp_client.annotate("Init")
 
 #%%
 
@@ -32,7 +37,6 @@ class RDFTriple(NamedTuple):
 
 class Token(NamedTuple):
     word: str
-    part_of_speech: str
     value: str
     before: str
     after: str
@@ -50,7 +54,7 @@ class AnnotatedSentence(NamedTuple):
     tokens: list[Token]
 
 
-@openie_cache.memoize
+@openie_cache.memoize()
 def corenlp_annotate(sentence: str) -> list[AnnotatedSentence]:
     result = corenlp_client.annotate(sentence)  # type: Any
     sentences: list[AnnotatedSentence] = []
@@ -70,7 +74,6 @@ def corenlp_annotate(sentence: str) -> list[AnnotatedSentence]:
             map(
                 lambda t: Token(
                     word=t.word,
-                    part_of_speech=t.part_of_speech,
                     value=t.value,
                     before=t.before,
                     after=t.after,

@@ -1,14 +1,23 @@
 import collections
-from typing import Any, NamedTuple, Tuple, Union
-import redis
-import numpy as np
-from kga2c.lib import make_admissible_actions_cache
-from representations import StateAction
 import random
+from typing import Any, NamedTuple, Tuple, Union
+
 import jericho
+import numpy as np
+import redis
 from jericho import TemplateActionGenerator
 from networkx import DiGraph
 from sentencepiece import SentencePieceProcessor
+
+from kga2c.lib import make_admissible_actions_cache
+from representations import StateAction
+
+
+class Action(NamedTuple):
+    text: str
+    id: int
+    objs: list[str]
+    obj_ids: list[int]
 
 
 class GraphInfo(NamedTuple):
@@ -17,8 +26,48 @@ class GraphInfo(NamedTuple):
     act_rep: list[int]
     graph_state: DiGraph
     graph_state_rep: Tuple[list[Any], np.ndarray]
-    admissible_actions: list[str]
+    admissible_actions: list[Action]
     admissible_actions_rep: list[list[int]]
+
+
+def generate_actions(
+    act_gen: TemplateActionGenerator,
+    objs: list[str],
+    obj_ids: list[int],
+):
+    actions: list[Action] = []
+
+    for id, template in enumerate(act_gen.templates):
+        holes = template.count("OBJ")
+        if holes <= 0:
+            actions.append(Action(text=template, id=id, objs=[], obj_ids=[]))
+        elif holes == 1:
+            actions.extend(
+                [
+                    Action(
+                        text=template.replace("OBJ", obj),
+                        id=id,
+                        objs=[obj],
+                        obj_ids=[obj_ids[obj_i]],
+                    )
+                    for obj_i, obj in enumerate(objs)
+                ]
+            )
+        elif holes == 2:
+            for o1 in objs:
+                for o2 in objs:
+                    if o1 != o2:
+                        actions.append(
+                            Action(
+                                text=template.replace("OBJ", o1, 1).replace(
+                                    "OBJ", o2, 1
+                                ),
+                                objs=objs,
+                                obj_ids=obj_ids,
+                                id=id,
+                            )
+                        )
+    return actions
 
 
 def load_vocab(env: jericho.FrotzEnv):
@@ -81,13 +130,19 @@ class KGA2CEnv:
 
     def _get_admissible_actions(self, objs):
         world_state_hash = self.env.get_world_state_hash()
-        admissible: Union[list[str], None] = (
+        admissible: Union[list[Action], None] = (
             list(self.admissible_actions_cache[world_state_hash])  # type: ignore
             if world_state_hash in self.admissible_actions_cache
             else None
         )
         if admissible is None:
-            admissible = self.act_gen.generate_actions(objs)
+            obj_ids = [
+                self.vocab_rev[o[: self.max_word_len]]
+                for o in objs
+                if o[: self.max_word_len] in self.vocab_rev
+            ]
+            objs_clean = [self.vocab[id] for id in obj_ids]
+            admissible = generate_actions(self.act_gen, objs_clean, obj_ids)
             self.admissible_actions_cache[world_state_hash] = admissible
 
         return admissible

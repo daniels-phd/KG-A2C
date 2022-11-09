@@ -8,9 +8,6 @@ packages = [{ include = "kga2c" }]
 
 [tool.poetry.dependencies]
 python = "^3.9"
-torch = [
-    { url = "https://download.pytorch.org/whl/nightly/cpu/torch-1.14.0.dev20221025-cp39-none-macosx_10_9_x86_64.whl" },
-]
 jericho = "^3.1.0"
 black = "^22.10.0"
 numpy = "^1.23.4"
@@ -25,6 +22,7 @@ diskcache = "^5.4.0"
 stanza = "^1.4.2"
 tensorboard = "^2.10.1"
 multiprocess = "^0.70.14"
+torch = "1.7.1"
 
 [build-system]
 requires = ["poetry-core"]

@@ -71,8 +71,8 @@ class DecoderRNN(nn.Module):
         self.out = nn.Linear(hidden_size, output_size)
         self.softmax = nn.Softmax(dim=1)
 
-    def forward(self, input, hidden):
-        input = input.unsqueeze_(0).expand(100, -1, -1)  # .transpose(0, 1).contiguous()
+    def forward(self, input: torch.Tensor, hidden: torch.Tensor):
+        input = input.unsqueeze(0).expand(100, -1, -1)  # .transpose(0, 1).contiguous()
         output, hidden = self.gru(input, hidden)
         output = self.out(output[0])
         return output, hidden

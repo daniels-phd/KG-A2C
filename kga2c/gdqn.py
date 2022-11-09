@@ -85,7 +85,7 @@ class KGA2CTrainer(object):
         self.loss_fn2 = nn.BCEWithLogitsLoss()
         self.loss_fn3 = nn.MSELoss()
 
-    def generate_targets(self, admissible, objs):
+    def generate_targets(self, admissible: list[list[Action]], objs):
         """
         Generates ground-truth targets for admissible actions.
 
@@ -100,7 +100,7 @@ class KGA2CTrainer(object):
             obj_t = set()
             cur_t = [0] * len(self.template_generator.templates)
             for a in adm:
-                cur_t[a.template_id] = 1
+                cur_t[a.id] = 1
                 obj_t.update(a.obj_ids)
             tmpl_target.append(cur_t)
             obj_targets.append(list(obj_t))
@@ -306,12 +306,8 @@ class KGA2CTrainer(object):
 
     def update(self, transitions, returns, advantages):
         assert len(transitions) == len(returns) == len(advantages)
-        loss = torch.tensor([0]).to(device)
-        template_loss = torch.tensor([0]).to(device)
-        object_mask_loss = torch.tensor([0]).to(device)
-        policy_loss = torch.tensor([0]).to(device)
-        value_loss = torch.tensor([0]).to(device)
-        entropy_loss = torch.tensor([0]).to(device)
+        loss = torch.tensor([0], dtype=torch.long, device=device)
+
         for trans, ret, adv in zip(transitions, returns, advantages):
             (
                 tmpl_pred_tt,
@@ -371,9 +367,11 @@ class KGA2CTrainer(object):
                     )
                     idx = graph_mask_list.index(dec_obj_idx)
                     log_prob_obj = action_log_probs_obj[idx]
-                    policy_obj_loss += -log_prob_obj * adv[i].detach()
+                    policy_obj_loss = policy_obj_loss.add(
+                        -log_prob_obj * adv[i].detach()
+                    )
             if cnt > 0:
-                policy_obj_loss /= cnt
+                policy_obj_loss = policy_obj_loss.div(cnt)
             tb.logkv_mean("PolicyObjLoss", policy_obj_loss.item())
             log_probs_obj = F.log_softmax(obj_pred_tt, dim=2)
 
@@ -395,12 +393,11 @@ class KGA2CTrainer(object):
                 tmpl_entropy + object_entropy
             )
 
-            loss += (
-                template_loss
-                + object_mask_loss
-                + value_loss
-                + entropy_loss
-                + policy_loss
+            loss = (
+                loss.add(template_loss)
+                .add(object_mask_loss)
+                .add(value_loss)
+                .add(entropy_loss.add(policy_loss))
             )
 
         tb.logkv("Loss", loss.item())
@@ -418,12 +415,12 @@ class KGA2CTrainer(object):
             grad_norm += p.grad.data.norm(2).item()  # type: ignore
         tb.logkv("UnclippedGradNorm", grad_norm)
 
-        nn.utils.clip_grad.clip_grad_norm_(self.model.parameters(), self.params["clip"])
+        # nn.utils.clip_grad.clip_grad_norm_(self.model.parameters(), self.params["clip"])
 
         # Clipped Grad norm
         grad_norm = 0
         for p in list(filter(lambda p: p.grad is not None, self.model.parameters())):
-            grad_norm += p.grad.data.norm(2).item()  # type: ignore
+            grad_norm = p.grad.data.norm(2).add(grad_norm).item()  # type: ignore
         tb.logkv("ClippedGradNorm", grad_norm)
 
         self.optimizer.step()

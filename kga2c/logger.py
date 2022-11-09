@@ -8,7 +8,6 @@ import datetime
 import tempfile
 from collections import defaultdict
 
-from torch.utils.tensorboard import SummaryWriter
 
 DEBUG = 10
 INFO = 20

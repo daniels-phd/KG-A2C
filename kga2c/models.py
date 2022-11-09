@@ -3,9 +3,9 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.autograd as autograd
 import torch.nn.functional as F
-import spacy
 import numpy as np
 
+autograd.set_detect_anomaly(True)
 from kga2c.layers import *
 
 
@@ -89,7 +89,7 @@ class ObjectDecoder(nn.Module):
                 all_words.append(decoder_input)
                 all_outputs.append(decoder_output)
 
-        return torch.stack(all_outputs), torch.stack(all_words)
+        return torch.stack(all_outputs).detach(), torch.stack(all_words).detach()
 
     def flatten_parameters(self):
         self.encoder.gru.flatten_parameters()
@@ -116,6 +116,7 @@ class KGA2C(nn.Module):
         self.batch_size = params["batch_size"]
         self.action_emb = nn.Embedding(len(vocab_act), params["embedding_size"])
         self.state_emb = nn.Embedding(input_vocab_size, params["embedding_size"])
+        self.stupid_layer = nn.Linear(in_features=7 * 4 * 300, out_features=1)
         self.action_drqa = ActionDrQA(
             input_vocab_size,
             params["embedding_size"],
@@ -235,13 +236,19 @@ class KGA2C(nn.Module):
         ) = self.template_enc.forward(torch.tensor(templ_enc_input).to(device).clone())
 
         decoder_o_output, decoded_o_words = self.decoder_object.forward(
-            decoder_o_hidden_init0.to(device),
-            decoder_t_hidden.squeeze_(0).to(device),
+            decoder_o_hidden_init0.to(device).detach(),
+            decoder_t_hidden.squeeze(0).to(device).detach(),
             self.vocab,
             self.vocab_rev,
             decode_steps,
             graphs,
         )
+
+        # 7, 4, 300
+        # value = self.stupid_layer(torch.from_numpy(obs).flatten().to(device).float())
+        # input(obs.shape)
+        # value, _ = self.action_drqa.forward(obs)
+        # value = value.mean().unsqueeze(0)
 
         return (
             decoder_t_output,
@@ -323,7 +330,8 @@ class StateNetwork(nn.Module):
             node_feats, adj = g
             adj = torch.IntTensor(adj).to(device)
             x = self.gat.forward(self.state_ent_emb.weight, adj).view(-1)
-            out.append(x.unsqueeze_(0))
+            x = x.unsqueeze(0)
+            out.append(x)
         out = torch.cat(out)
         ret = self.fc1(out)
         return ret
@@ -369,15 +377,15 @@ class ActionDrQA(nn.Module):
         """Makes a clone of hidden state."""
         self.tmp_look = self.h_look.clone().detach()
         self.tmp_inv = self.h_inv.clone().detach()
-        self.h_ob = self.h_ob.clone().detach()
-        self.h_preva = self.h_preva.clone().detach()
+        self.tmp_h_ob = self.h_ob.clone().detach()
+        self.tmp_h_preva = self.h_preva.clone().detach()
 
     def restore_hidden(self):
         """Restores hidden state from clone made by clone_hidden."""
         self.h_look = self.tmp_look
         self.h_inv = self.tmp_inv
-        self.h_ob = self.h_ob
-        self.h_preva = self.h_preva
+        self.h_ob = self.tmp_h_ob
+        self.h_preva = self.tmp_h_preva
 
     def forward(self, obs):
         """

@@ -187,7 +187,7 @@ class KGA2CEnv:
     def step(self, action):
         self.episode_steps += 1
         obs, reward, done, info = self.env.step(action)
-        reward = reward - get_intrinsic_reward(action, obs, 1).negative
+        # `reward = reward - get_intrinsic_reward(action, obs, 1).negative
         # reward = reward + get_intrinsic_reward(action, obs, 1).positive
         info["valid"] = self.env.world_changed() or done
         info["steps"] = self.episode_steps

@@ -7,22 +7,22 @@ readme = "README.md"
 packages = [{ include = "kga2c" }]
 
 [tool.poetry.dependencies]
-python = "^3.9"
-jericho = "^3.1.0"
+python = "^3.7"
+jericho = "2.4.2"
 black = "^22.10.0"
-numpy = "^1.23.4"
 ipykernel = "^6.16.2"
 redis = "^4.3.4"
 sentencepiece = "^0.1.97"
 statistics = "^1.0.3.5"
-networkx = "^2.8.7"
-spacy = "^3.4.2"
+
+spacy = "2.3"
 fuzzywuzzy = "^0.18.0"
 diskcache = "^5.4.0"
 stanza = "^1.4.2"
 tensorboard = "^2.10.1"
 multiprocess = "^0.70.14"
-torch = "1.7.1"
+transformers = { version = "^4.24.0" }
+networkx = "2.4"
 
 [build-system]
 requires = ["poetry-core"]

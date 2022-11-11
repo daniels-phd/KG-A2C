@@ -1,29 +1,28 @@
-import os
-import time
-from os.path import basename, splitext
-from statistics import mean
-from typing import Any
-
-import jericho
-import jericho.defines
-import numpy as np
-import sentencepiece as spm
 import torch
-import torch.autograd as autograd
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
+import torch.autograd as autograd
+import torch.nn.functional as F
+import os
+from os.path import basename, splitext
+import numpy as np
+import time
+import sentencepiece as spm
+from statistics import mean
+
+from jericho import *
 from jericho.template_action_generator import TemplateActionGenerator
-from jericho.util import clean, unabbreviate
+from jericho.util import unabbreviate, clean
+import jericho.defines
 
-import kga2c.logger as logger
-from kga2c.env import *
-from kga2c.types import Params
-from kga2c.models import KGA2C
-from kga2c.representations import StateAction
-from kga2c.vec_env import *
+from representations import StateAction
+from models import KGA2C
+from env import *
+from vec_env import *
+import logger
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+device = torch.device("cuda")
 
 
 def configure_logger(log_dir):
@@ -32,7 +31,7 @@ def configure_logger(log_dir):
     tb = logger.Logger(
         log_dir,
         [
-            # logger.make_output_format("tensorboard", log_dir),
+            logger.make_output_format("tensorboard", log_dir),
             logger.make_output_format("csv", log_dir),
             logger.make_output_format("stdout", log_dir),
         ],
@@ -43,29 +42,21 @@ def configure_logger(log_dir):
 
 class KGA2CTrainer(object):
     """
-
     KGA2C main class.
-
-
     """
 
-    def __init__(self, params: Params):
-        logger_dir = params["output_dir"]
-        configure_logger(logger_dir)
-
+    def __init__(self, params):
+        configure_logger(params["output_dir"])
         log("Parameters {}".format(params))
         self.params = params
-        self.env = jericho.FrotzEnv(params["rom_file_path"], params["seed"])
-        self.bindings: dict[str, Any] = self.env.bindings  # type: ignore
-        self.act_gen: TemplateActionGenerator = self.env.act_gen  # type: ignore
-        self.max_word_length: int = self.bindings["max_word_length"]  # type: ignore
-        self.vocab, self.vocab_rev = load_vocab(self.env)
+        self.binding = load_bindings(params["rom_file_path"])
+        self.max_word_length = self.binding["max_word_length"]
         self.sp = spm.SentencePieceProcessor()
         self.sp.Load(params["spm_file"])
 
         self.vec_env = VecEnv(params["batch_size"], params)
-        self.template_generator = TemplateActionGenerator(self.bindings)
-        env = self.env
+        self.template_generator = TemplateActionGenerator(self.binding)
+        env = FrotzEnv(params["rom_file_path"])
         self.vocab_act, self.vocab_act_rev = load_vocab(env)
         self.model = KGA2C(
             params,
@@ -75,7 +66,7 @@ class KGA2CTrainer(object):
             self.vocab_act_rev,
             len(self.sp),
             gat=self.params["gat"],
-        ).to(device)
+        ).cuda()
         self.batch_size = params["batch_size"]
         if params["preload_weights"]:
             self.model = torch.load(self.params["preload_weights"])["model"]
@@ -85,14 +76,12 @@ class KGA2CTrainer(object):
         self.loss_fn2 = nn.BCEWithLogitsLoss()
         self.loss_fn3 = nn.MSELoss()
 
-    def generate_targets(self, admissible: list[list[Action]], objs):
+    def generate_targets(self, admissible, objs):
         """
         Generates ground-truth targets for admissible actions.
-
         :param admissible: List-of-lists of admissible actions. Batch_size x Admissible
         :param objs: List-of-lists of interactive objects. Batch_size x Objs
         :returns: template targets and object target tensors
-
         """
         tmpl_target = []
         obj_targets = []
@@ -100,11 +89,11 @@ class KGA2CTrainer(object):
             obj_t = set()
             cur_t = [0] * len(self.template_generator.templates)
             for a in adm:
-                cur_t[a.id] = 1
+                cur_t[a.template_id] = 1
                 obj_t.update(a.obj_ids)
             tmpl_target.append(cur_t)
             obj_targets.append(list(obj_t))
-        tmpl_target_tt = torch.FloatTensor(tmpl_target).to(device)
+        tmpl_target_tt = torch.FloatTensor(tmpl_target).cuda()
 
         # Note: Adjusted to use the objects in the admissible actions only
         object_mask_target = []
@@ -113,7 +102,7 @@ class KGA2CTrainer(object):
             for o in objl:
                 cur_objt[o] = 1
             object_mask_target.append([[cur_objt], [cur_objt]])
-        obj_target_tt = torch.FloatTensor(object_mask_target).squeeze().to(device)
+        obj_target_tt = torch.FloatTensor(object_mask_target).squeeze().cuda()
         return tmpl_target_tt, obj_target_tt
 
     def generate_graph_mask(self, graph_infos):
@@ -145,7 +134,7 @@ class KGA2CTrainer(object):
             else:
                 assert False, "Unrecognized masking {}".format(self.params["masking"])
             mask_all.append(mask)
-        return torch.BoolTensor(mask_all).to(device).detach()
+        return torch.BoolTensor(mask_all).cuda().detach()
 
     def discount_reward(self, transitions, last_values):
         returns, advantages = [], []
@@ -253,8 +242,8 @@ class KGA2CTrainer(object):
             for done, info in zip(dones, infos):
                 if done:
                     tb.logkv_mean("EpisodeScore", info["score"])
-            rew_tt = torch.FloatTensor(rewards).to(device).unsqueeze(1)
-            done_mask_tt = (~torch.tensor(dones)).float().to(device).unsqueeze(1)
+            rew_tt = torch.FloatTensor(rewards).cuda().unsqueeze(1)
+            done_mask_tt = (~torch.tensor(dones)).float().cuda().unsqueeze(1)
             self.model.reset_hidden(done_mask_tt)
             transitions.append(
                 (
@@ -306,8 +295,7 @@ class KGA2CTrainer(object):
 
     def update(self, transitions, returns, advantages):
         assert len(transitions) == len(returns) == len(advantages)
-        loss = torch.tensor([0], dtype=torch.long, device=device)
-
+        loss = 0
         for trans, ret, adv in zip(transitions, returns, advantages):
             (
                 tmpl_pred_tt,
@@ -325,14 +313,14 @@ class KGA2CTrainer(object):
 
             # Supervised Template Loss
             tmpl_probs = F.softmax(tmpl_pred_tt, dim=1)
-            template_loss = self.params["template_coeff"] * self.loss_fn1.forward(
+            template_loss = self.params["template_coeff"] * self.loss_fn1(
                 tmpl_probs, tmpl_gt_tt
             )
 
             # Supervised Object Loss
             object_mask_target = obj_mask_gt_tt.permute((1, 0, 2))
             obj_probs = F.softmax(obj_pred_tt, dim=2)
-            object_mask_loss = self.params["object_coeff"] * self.loss_fn1.forward(
+            object_mask_loss = self.params["object_coeff"] * self.loss_fn1(
                 obj_probs, object_mask_target
             )
 
@@ -344,11 +332,11 @@ class KGA2CTrainer(object):
                     o2_mask[d] = 1
                 elif st == 1:
                     o1_mask[d] = 1
-            o1_mask = torch.FloatTensor(o1_mask).to(device)
-            o2_mask = torch.FloatTensor(o2_mask).to(device)
+            o1_mask = torch.FloatTensor(o1_mask).cuda()
+            o2_mask = torch.FloatTensor(o2_mask).cuda()
 
             # Policy Gradient Loss
-            policy_obj_loss = torch.FloatTensor([0]).to(device)
+            policy_obj_loss = torch.FloatTensor([0]).cuda()
             cnt = 0
             for i in range(self.batch_size):
                 if dec_steps[i] >= 1:
@@ -367,11 +355,9 @@ class KGA2CTrainer(object):
                     )
                     idx = graph_mask_list.index(dec_obj_idx)
                     log_prob_obj = action_log_probs_obj[idx]
-                    policy_obj_loss = policy_obj_loss.add(
-                        -log_prob_obj * adv[i].detach()
-                    )
+                    policy_obj_loss += -log_prob_obj * adv[i].detach()
             if cnt > 0:
-                policy_obj_loss = policy_obj_loss.div(cnt)
+                policy_obj_loss /= cnt
             tb.logkv_mean("PolicyObjLoss", policy_obj_loss.item())
             log_probs_obj = F.log_softmax(obj_pred_tt, dim=2)
 
@@ -393,11 +379,12 @@ class KGA2CTrainer(object):
                 tmpl_entropy + object_entropy
             )
 
-            loss = (
-                loss.add(template_loss)
-                .add(object_mask_loss)
-                .add(value_loss)
-                .add(entropy_loss.add(policy_loss))
+            loss += (
+                template_loss
+                + object_mask_loss
+                + value_loss
+                + entropy_loss
+                + policy_loss
             )
 
         tb.logkv("Loss", loss.item())
@@ -412,15 +399,15 @@ class KGA2CTrainer(object):
         # Compute the gradient norm
         grad_norm = 0
         for p in list(filter(lambda p: p.grad is not None, self.model.parameters())):
-            grad_norm += p.grad.data.norm(2).item()  # type: ignore
+            grad_norm += p.grad.data.norm(2).item()
         tb.logkv("UnclippedGradNorm", grad_norm)
 
-        # nn.utils.clip_grad.clip_grad_norm_(self.model.parameters(), self.params["clip"])
+        nn.utils.clip_grad_norm_(self.model.parameters(), self.params["clip"])
 
         # Clipped Grad norm
         grad_norm = 0
         for p in list(filter(lambda p: p.grad is not None, self.model.parameters())):
-            grad_norm = p.grad.data.norm(2).add(grad_norm).item()  # type: ignore
+            grad_norm += p.grad.data.norm(2).item()
         tb.logkv("ClippedGradNorm", grad_norm)
 
         self.optimizer.step()
@@ -430,12 +417,10 @@ class KGA2CTrainer(object):
     def decode_actions(self, decoded_templates, decoded_objects):
         """
         Returns string representations of the given template actions.
-
         :param decoded_template: Tensor of template indices.
         :type decoded_template: Torch tensor of size (Batch_size x 1).
         :param decoded_objects: Tensor of o1, o2 object indices.
         :type decoded_objects: Torch tensor of size (2 x Batch_size x 1).
-
         """
         decoded_actions = []
         for i in range(self.batch_size):

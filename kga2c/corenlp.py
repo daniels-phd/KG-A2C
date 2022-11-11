@@ -1,6 +1,6 @@
 #%%
 from dataclasses import dataclass
-from typing import NamedTuple, Any
+from typing import NamedTuple, Any, List
 import stanza
 from stanza.server import CoreNLPClient
 import diskcache
@@ -50,14 +50,14 @@ class Token(NamedTuple):
 
 
 class AnnotatedSentence(NamedTuple):
-    rdf_triples: list[RDFTriple]
-    tokens: list[Token]
+    rdf_triples: List[RDFTriple]
+    tokens: List[Token]
 
 
 @openie_cache.memoize()
-def corenlp_annotate(sentence: str) -> list[AnnotatedSentence]:
+def corenlp_annotate(sentence: str) -> List[AnnotatedSentence]:
     result = corenlp_client.annotate(sentence)  # type: Any
-    sentences: list[AnnotatedSentence] = []
+    sentences: List[AnnotatedSentence] = []
     for sentence in result.sentence:
         rdf_triples = list(
             map(

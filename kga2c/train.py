@@ -2,8 +2,6 @@ import os
 from kga2c.gdqn import KGA2CTrainer
 import argparse
 
-from kga2c.types import Params
-
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -21,7 +19,7 @@ def parse_args():
     parser.add_argument("--dropout_ratio", default=0.2, type=float)
     parser.add_argument("--preload_weights", default="")
     parser.add_argument("--seed", default=0, type=int)
-    parser.add_argument("--steps", default=100, type=int)
+    parser.add_argument("--steps", default=10000, type=int)
     parser.add_argument("--reset_steps", default=100, type=int)
     parser.add_argument("--stuck_steps", default=10, type=int)
     parser.add_argument("--trial", default="base")
@@ -47,9 +45,8 @@ def parse_args():
     parser.set_defaults(gat=True)
     args = parser.parse_args()
     params = vars(args)
-    p = Params(**params)
 
-    return p
+    return params
 
 
 if __name__ == "__main__":

@@ -1,11 +1,11 @@
 import collections
 import random
-from typing import Any, NamedTuple, Tuple, Union
+from typing import Any, List, NamedTuple, Tuple, Union
 
 import jericho
 import numpy as np
-import redis
-from jericho import TemplateActionGenerator
+from jericho.template_action_generator import TemplateActionGenerator
+from kga2c.intrinsic_rewards import get_intrinsic_reward
 from networkx import DiGraph
 from sentencepiece import SentencePieceProcessor
 
@@ -16,26 +16,26 @@ from representations import StateAction
 class Action(NamedTuple):
     text: str
     id: int
-    objs: list[str]
-    obj_ids: list[int]
+    objs: List[str]
+    obj_ids: List[int]
 
 
 class GraphInfo(NamedTuple):
-    objs: list[str]
+    objs: List[str]
     ob_rep: np.ndarray
-    act_rep: list[int]
+    act_rep: List[int]
     graph_state: DiGraph
-    graph_state_rep: Tuple[list[Any], np.ndarray]
-    admissible_actions: list[Action]
-    admissible_actions_rep: list[list[int]]
+    graph_state_rep: Tuple[List[Any], np.ndarray]
+    admissible_actions: List[Action]
+    admissible_actions_rep: List[List[int]]
 
 
 def generate_actions(
     act_gen: TemplateActionGenerator,
-    objs: list[str],
-    obj_ids: list[int],
+    objs: List[str],
+    obj_ids: List[int],
 ):
-    actions: list[Action] = []
+    actions: List[Action] = []
 
     for id, template in enumerate(act_gen.templates):
         holes = template.count("OBJ")
@@ -94,10 +94,10 @@ class KGA2CEnv:
 
     def __init__(
         self,
-        rom_path: str,
-        seed: int,
-        spm_model: SentencePieceProcessor,
-        tsv_file: str,
+        rom_path,
+        seed,
+        spm_model,
+        tsv_file,
         step_limit=None,
         stuck_steps=10,
         gat=True,
@@ -114,42 +114,40 @@ class KGA2CEnv:
         self.step_limit = step_limit
         self.max_stuck_steps = stuck_steps
         self.gat = gat
+        self.env = None
+        self.vocab = None
+        self.vocab_rev = None
+        self.state_rep = None
         self.env = jericho.FrotzEnv(self.rom_path, self.seed)
-        self.bindings: dict[str, Any] = self.env.bindings  # type: ignore
-        self.act_gen: TemplateActionGenerator = self.env.act_gen  # type: ignore
-        self.max_word_len: int = self.bindings["max_word_length"]  # type: ignore
+        self.bindings = jericho.load_bindings(self.rom_path)
+        self.act_gen = TemplateActionGenerator(self.bindings)
+        self.max_word_len = self.bindings["max_word_length"]
         self.vocab, self.vocab_rev = load_vocab(self.env)
         self.admissible_actions_cache = make_admissible_actions_cache(
             self.bindings["name"]  # type: ignore
         )
 
     def create(self):
-        self.env = jericho.FrotzEnv(self.rom_path, self.seed)
-        self.bindings: dict[str, Any] = self.env.bindings  # type: ignore
-        self.act_gen: TemplateActionGenerator = self.env.act_gen  # type: ignore
+        """Create the Jericho environment and connect to redis."""
 
     def _get_admissible_actions(self, objs):
+        obj_ids = [self.vocab_rev[o[: self.max_word_len]] for o in objs]
         world_state_hash = self.env.get_world_state_hash()
-        admissible: Union[list[Action], None] = (
+        admissible: Union[List[Action], None] = (
             list(self.admissible_actions_cache[world_state_hash])  # type: ignore
             if world_state_hash in self.admissible_actions_cache
             else None
         )
         if admissible is None:
-            obj_ids = [
-                self.vocab_rev[o[: self.max_word_len]]
-                for o in objs
-                if o[: self.max_word_len] in self.vocab_rev
-            ]
-            objs_clean = [self.vocab[id] for id in obj_ids]
-            admissible = generate_actions(self.act_gen, objs_clean, obj_ids)
+            possible_acts = self.act_gen.generate_template_actions(objs, obj_ids)
+            admissible = self.env.find_valid_actions(possible_acts)
             self.admissible_actions_cache[world_state_hash] = admissible
 
         return admissible
 
     def _build_graph_rep(self, action, ob_r):
         """Returns various graph-based representations of the current state."""
-        objs = [o[0] for o in self.env._identify_interactive_objects(ob_r)]
+        objs = [o[0] for o in self.env.identify_interactive_objects(ob_r)]
         objs.append("all")
         admissible_actions = self._get_admissible_actions(objs)
         admissible_actions_rep = (
@@ -189,7 +187,9 @@ class KGA2CEnv:
     def step(self, action):
         self.episode_steps += 1
         obs, reward, done, info = self.env.step(action)
-        info["valid"] = self.env._world_changed() or done
+        reward = reward - get_intrinsic_reward(action, obs, 1).negative
+        # reward = reward + get_intrinsic_reward(action, obs, 1).positive
+        info["valid"] = self.env.world_changed() or done
         info["steps"] = self.episode_steps
         if info["valid"]:
             self.valid_steps += 1

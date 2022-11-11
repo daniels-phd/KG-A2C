@@ -3,10 +3,10 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.autograd as autograd
 import torch.nn.functional as F
+import spacy
 import numpy as np
 
-autograd.set_detect_anomaly(True)
-from kga2c.layers import *
+from layers import *
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -44,7 +44,7 @@ class ObjectDecoder(nn.Module):
     def forward(self, input, input_hidden, vocab, vocab_rev, decode_steps_t, graphs):
         all_outputs, all_words = [], []
 
-        decoder_input = torch.tensor([vocab_rev["<s>"]] * input.size(0)).to(device)
+        decoder_input = torch.tensor([vocab_rev["<s>"]] * input.size(0)).cuda()
         decoder_hidden = input_hidden.unsqueeze(0)
         torch.set_printoptions(profile="full")
 
@@ -63,7 +63,7 @@ class ObjectDecoder(nn.Module):
                     graph_list = graphs[i].nonzero().cpu().numpy().flatten().tolist()
                     assert len(graph_list) == dec_probs.numel()
                     dec_objs.append(graph_list[idx])
-                topi = torch.LongTensor(dec_objs).to(device)
+                topi = torch.LongTensor(dec_objs).cuda()
 
                 # dec_probs = self.softmax(decoder_output)
                 # topi = dec_probs.multinomial(num_samples=1)
@@ -85,11 +85,11 @@ class ObjectDecoder(nn.Module):
                     )
                     cur_objs.append(cur_obj)
 
-                decoder_input = torch.LongTensor(cur_objs).to(device)
+                decoder_input = torch.LongTensor(cur_objs).cuda()
                 all_words.append(decoder_input)
                 all_outputs.append(decoder_output)
 
-        return torch.stack(all_outputs).detach(), torch.stack(all_words).detach()
+        return torch.stack(all_outputs), torch.stack(all_words)
 
     def flatten_parameters(self):
         self.encoder.gru.flatten_parameters()
@@ -116,7 +116,6 @@ class KGA2C(nn.Module):
         self.batch_size = params["batch_size"]
         self.action_emb = nn.Embedding(len(vocab_act), params["embedding_size"])
         self.state_emb = nn.Embedding(input_vocab_size, params["embedding_size"])
-        self.stupid_layer = nn.Linear(in_features=7 * 4 * 300, out_features=1)
         self.action_drqa = ActionDrQA(
             input_vocab_size,
             params["embedding_size"],
@@ -181,7 +180,6 @@ class KGA2C(nn.Module):
         :param obs: The encoded ids for the textual observations (shape 4x300):
         The 4 components of an observation are: look - ob_l, inventory - ob_i, response - ob_r, and prev_action.
         :type obs: ndarray
-
         """
         batch = self.batch_size
         # print('obs', obs)
@@ -199,7 +197,7 @@ class KGA2C(nn.Module):
             cur_st.extend([int(c) for c in "{0:09b}".format(abs(scr))])
             src_t.append(cur_st)
 
-        src_t = torch.FloatTensor(src_t).to(device)
+        src_t = torch.FloatTensor(src_t).cuda()
 
         if not self.gat:
             state_emb = torch.cat((o_t, src_t), dim=1)
@@ -233,22 +231,16 @@ class KGA2C(nn.Module):
             decoder_o_input,
             decoder_o_hidden_init0,
             decoder_o_enc_oinpts,
-        ) = self.template_enc.forward(torch.tensor(templ_enc_input).to(device).clone())
+        ) = self.template_enc.forward(torch.tensor(templ_enc_input).cuda().clone())
 
         decoder_o_output, decoded_o_words = self.decoder_object.forward(
-            decoder_o_hidden_init0.to(device).detach(),
-            decoder_t_hidden.squeeze(0).to(device).detach(),
+            decoder_o_hidden_init0.cuda(),
+            decoder_t_hidden.squeeze_(0).cuda(),
             self.vocab,
             self.vocab_rev,
             decode_steps,
             graphs,
         )
-
-        # 7, 4, 300
-        # value = self.stupid_layer(torch.from_numpy(obs).flatten().to(device).float())
-        # input(obs.shape)
-        # value, _ = self.action_drqa.forward(obs)
-        # value = value.mean().unsqueeze(0)
 
         return (
             decoder_t_output,
@@ -309,7 +301,7 @@ class StateNetwork(nn.Module):
                         graph_node_ids.append(1)
                 else:
                     graph_node_ids.append(1)
-            graph_node_ids = torch.LongTensor(graph_node_ids).to(device)
+            graph_node_ids = torch.LongTensor(graph_node_ids).cuda()
             cur_embeds = self.pretrained_embeds(graph_node_ids)
 
             cur_embeds = cur_embeds.mean(dim=0)
@@ -328,10 +320,9 @@ class StateNetwork(nn.Module):
         out = []
         for g in graph_rep:
             node_feats, adj = g
-            adj = torch.IntTensor(adj).to(device)
+            adj = torch.IntTensor(adj).cuda()
             x = self.gat.forward(self.state_ent_emb.weight, adj).view(-1)
-            x = x.unsqueeze(0)
-            out.append(x)
+            out.append(x.unsqueeze_(0))
         out = torch.cat(out)
         ret = self.fc1(out)
         return ret
@@ -363,10 +354,8 @@ class ActionDrQA(nn.Module):
     def reset_hidden(self, done_mask_tt):
         """
         Reset the hidden state of episodes that are done.
-
         :param done_mask_tt: Mask indicating which parts of hidden state should be reset.
         :type done_mask_tt: Tensor of shape [BatchSize x 1]
-
         """
         self.h_look = done_mask_tt.detach() * self.h_look
         self.h_inv = done_mask_tt.detach() * self.h_inv
@@ -391,14 +380,11 @@ class ActionDrQA(nn.Module):
         """
         :param obs: Encoded observation tokens.
         :type obs: np.ndarray of shape (Batch_Size x 4 x 300)
-
         """
-        x_l, h_l = self.enc_look(torch.LongTensor(obs[:, 0, :]).to(device), self.h_look)
-        x_i, h_i = self.enc_inv(torch.LongTensor(obs[:, 1, :]).to(device), self.h_inv)
-        x_o, h_o = self.enc_ob(torch.LongTensor(obs[:, 2, :]).to(device), self.h_ob)
-        x_p, h_p = self.enc_preva(
-            torch.LongTensor(obs[:, 3, :]).to(device), self.h_preva
-        )
+        x_l, h_l = self.enc_look(torch.LongTensor(obs[:, 0, :]).cuda(), self.h_look)
+        x_i, h_i = self.enc_inv(torch.LongTensor(obs[:, 1, :]).cuda(), self.h_inv)
+        x_o, h_o = self.enc_ob(torch.LongTensor(obs[:, 2, :]).cuda(), self.h_ob)
+        x_p, h_p = self.enc_preva(torch.LongTensor(obs[:, 3, :]).cuda(), self.h_preva)
 
         if self.recurrent:
             self.h_look = h_l

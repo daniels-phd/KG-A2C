@@ -2,11 +2,10 @@ from queue import Queue
 from threading import Event, Thread
 
 from kga2c.env import KGA2CEnv
-from kga2c.types import Params
 import sentencepiece as spm
 
 
-def worker(queue: Queue, event: Event, params: Params):
+def worker(queue: Queue, event: Event, params):
 
     sp = spm.SentencePieceProcessor()
     sp.Load(params["spm_file"])
@@ -52,7 +51,7 @@ def worker(queue: Queue, event: Event, params: Params):
 
 
 class VecEnv:
-    def __init__(self, num_envs, params: Params):
+    def __init__(self, num_envs, params):
         self.closed = False
         self.total_steps = 0
         self.num_envs = num_envs

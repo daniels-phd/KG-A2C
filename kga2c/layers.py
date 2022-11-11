@@ -45,7 +45,7 @@ class PackedEncoderRNN(nn.Module):
         )  # , device=device)
 
         packed = nn.utils.rnn.pack_padded_sequence(
-            embedded, lengths, enforce_sorted=False
+            embedded, lengths.to("cpu"), enforce_sorted=False
         )
         output, hidden = self.gru(packed, hidden)
         # Unpack the padded sequence
